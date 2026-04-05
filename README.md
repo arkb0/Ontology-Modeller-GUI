@@ -14,7 +14,6 @@ A React-based graphical user interface designed to generate structured JSON mode
 
 * **Framework**: React
 * **UI Library**: Material UI (MUI)
-* **Form Engine**: `@rjsf/mui` (React JSON Schema Form)
 * **Validation**: AJV8
 
 ## Project Status: MVP
