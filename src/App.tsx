@@ -16,6 +16,8 @@ import MethodForm from './components/forms/MethodForm';
 import KnowledgeForm from './components/forms/KnowledgeForm';
 // Import the memoised preview pane
 import PreviewPane from './components/common/PreviewPane';
+// Graph visualiser
+import Visualiser from './components/Visualiser';
 
 // -----------------------------------------------------------------------------
 // FORM REGISTRY
@@ -56,7 +58,7 @@ function App() {
   const [previewData, setPreviewData] = useState(formData);
   // State to toggle live preview (resource hog!)
   const [livePreview, setLivePreview] = useState(true);
-  //State to swap layout (form left vs preview left)
+  // State to swap layout (form left vs preview left)
   const [swapLayout, setSwapLayout] = useState(false);
   // Dialog state for clearing the current form
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
@@ -66,6 +68,10 @@ function App() {
   const [localData, setLocalData] = useState<any>({});
   // Callback function for final form submission (currently logs to console)
   const onSubmit = ({ formData }: { formData: any }) => console.log("Data submitted: ", formData);
+  // State to toggle between JSON preview and Graph visualiser
+  const [viewMode, setViewMode] = useState<'json' | 'graph'>('json');
+  // Track the current active method to update the graph preview pane
+  const [activeMethodIdx, setActiveMethodIdx] = useState<number>(0);
 
   // Sync localData to the 'slow' global state only when the user stops typing
   useEffect(() => {
@@ -225,6 +231,9 @@ function App() {
       <ActiveFormComponent
         data={formDataByTab[tabIndex] || {}} // Access the specific bucket
         onChange={handleFormChange}
+        // Handle update
+        onActiveMethodChange={setActiveMethodIdx}
+        activeMethodIndex={activeMethodIdx}
       />
       <Box display="flex" gap={2} mt={2}>
         <Button variant="contained" color="primary" onClick={handleSave}>Save JSON</Button>
@@ -254,10 +263,43 @@ function App() {
 
   // The preview pane — always rendered, content freezes when live preview is off
   const previewPane = (
-    <PreviewPane
-      data={previewData}
-      backgroundColor={theme.palette.background.paper}
-    />
+    <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      {/* Toggle Header for the right pane */}
+      <Box display="flex" justifyContent="flex-end" mb={1}>
+        <Tabs 
+          value={viewMode} 
+          onChange={(_e, v) => setViewMode(v)} 
+          sx={{ minHeight: '32px' }}
+        >
+          <Tab value="json" label="JSON" sx={{ fontSize: '0.7rem' }} />
+          <Tab value="graph" label="Graph" sx={{ fontSize: '0.7rem' }} />
+        </Tabs>
+      </Box>
+
+      {viewMode === 'json' ? (
+        <PreviewPane
+          data={previewData}
+          backgroundColor={theme.palette.background.paper}
+        />
+      ) : (
+        <Visualiser 
+          data={previewData.organizer || previewData.methods?.[activeMethodIdx]?.organizer} 
+          onUpdate={(updatedOrg) => {
+            // Handle updating the specific method's organizer
+            const newData = { ...previewData };
+            
+            if (newData.organizer) {
+              newData.organizer = updatedOrg;
+            } else if (newData.methods?.[activeMethodIdx]) {
+              // Update the specific method being viewed
+              newData.methods[activeMethodIdx].organizer = updatedOrg;
+            }
+
+            handleFormChange(newData);
+          }}
+        />
+      )}
+    </Box>
   );
 
   return (
