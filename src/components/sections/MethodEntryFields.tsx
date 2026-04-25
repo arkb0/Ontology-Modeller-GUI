@@ -4,6 +4,7 @@ import {
   Accordion, AccordionSummary, AccordionDetails,
   Divider, Switch, FormControlLabel
 } from '@mui/material';
+import VisibilityIcon from '@mui/icons-material/Visibility';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -242,13 +243,17 @@ interface MethodEntryProps {
   method: any;
   onChange: (updated: any) => void;
   onRemove: () => void;
+
+  // Props to support switching previews
+  onPreview: () => void;
+  isActivePreview: boolean;
   index: number;
 }
 
 /**
  * Renders the form fields for a single Method object.
  */
-const MethodEntryFields = memo(function MethodEntryFields({ method, onChange, onRemove, index }: MethodEntryProps) {
+const MethodEntryFields = memo(function MethodEntryFields({ method, onChange, onRemove, onPreview, isActivePreview, index }: MethodEntryProps) {
   const hasOrganizer = !!method.organizer;
 
   const update = useCallback((field: string, value: any) => {
@@ -278,12 +283,26 @@ const MethodEntryFields = memo(function MethodEntryFields({ method, onChange, on
     <Accordion defaultExpanded={false} TransitionProps={{ unmountOnExit: true }}>
       <AccordionSummary expandIcon={<ExpandMoreIcon />}>
         <Box display="flex" justifyContent="space-between" alignItems="center" width="100%">
-          <Typography variant="subtitle1">
-            Method #{index + 1}{method.name ? `: ${method.name}` : ''}
-            <Typography component="span" variant="caption" sx={{ ml: 1, opacity: 0.7 }}>
-              ({hasOrganizer ? 'Non-atomic' : 'Atomic'})
+          <Box display="flex" alignItems="center">
+            <Typography variant="subtitle1">
+              Method #{index + 1}{method.name ? `: ${method.name}` : ''}
+              <Typography component="span" variant="caption" sx={{ ml: 1, opacity: 0.7 }}>
+                ({hasOrganizer ? 'Non-atomic' : 'Atomic'})
+              </Typography>
             </Typography>
-          </Typography>
+            {hasOrganizer && (
+              <Tooltip title="View in FSM Graph">
+                <IconButton 
+                  size="small" 
+                  color={isActivePreview ? "primary" : "default"} 
+                  onClick={(e) => { e.stopPropagation(); onPreview(); }}
+                  sx={{ ml: 1 }}
+                >
+                  <VisibilityIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            )}
+          </Box>
           <Tooltip title="Remove this method">
             <IconButton
               size="small"

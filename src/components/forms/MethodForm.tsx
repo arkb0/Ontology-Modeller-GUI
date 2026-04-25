@@ -3,6 +3,7 @@ import { Box, Typography, TextField, IconButton, Tooltip } from '@mui/material';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import { replaceAt, removeAt } from '../../utils/helpers';
 import MethodEntryFields from '../sections/MethodEntryFields';
+import FSMModal from '../modals/FSMModal'; // Import the modal
 
 interface MethodData {
   model?: string;
@@ -13,14 +14,20 @@ interface MethodData {
 interface MethodFormProps {
   data: MethodData;
   onChange: (updatedData: MethodData) => void;
+  // For tracking the active preview
+  onActiveMethodChange?: (index: number) => void;
+  activeMethodIndex?: number;
 }
 
 /**
  * The complete Method Model form.
  * Mirrors the Method.schema.json structure.
  */
-const MethodForm = memo(function MethodForm({ data, onChange }: MethodFormProps) {
+const MethodForm = memo(function MethodForm({ data, onChange, onActiveMethodChange, activeMethodIndex }: MethodFormProps) {
   const methods = data.methods || [];
+  // Track the current preview
+  // -- State for the Modal --
+  const [previewIdx, setPreviewIdx] = React.useState<number | null>(null);
 
   const updateMethods = useCallback((newMethods: any[]) => {
     onChange({ ...data, model: 'Method', methods: newMethods });
@@ -71,8 +78,22 @@ const MethodForm = memo(function MethodForm({ data, onChange }: MethodFormProps)
           method={method}
           onChange={(updated: any) => updateMethods(replaceAt(methods, idx, updated))}
           onRemove={() => updateMethods(removeAt(methods, idx))}
+          onPreview={() => onActiveMethodChange?.(idx)}
+          isActivePreview={activeMethodIndex === idx}
         />
       ))}
+
+      {/* -- The FSM Modal -- */}
+      <FSMModal
+        open={previewIdx !== null}
+        onClose={() => setPreviewIdx(null)}
+        method={previewIdx !== null ? methods[previewIdx] : null}
+        onUpdate={(updatedMethod) => {
+          if (previewIdx !== null) {
+            updateMethods(replaceAt(methods, previewIdx, updatedMethod));
+          }
+        }}
+      />
     </Box>
   );
 });
