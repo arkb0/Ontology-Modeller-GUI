@@ -1,5 +1,11 @@
 # TMK Modeller
 
+#### (Choose your language below / 选择您的语言)
+[![English](https://img.shields.io/badge/🌐-English-blue)](README.md)
+[![简体中文](https://img.shields.io/badge/🌐-简体中文-red)](README.zh-CN.md)
+
+---
+
 A React-based graphical user interface designed to generate structured JSON models compliant with **Task-Method-Knowledge (TMK)** schemata.
 
 ## Features
@@ -14,6 +20,7 @@ A React-based graphical user interface designed to generate structured JSON mode
 
 * **Framework**: React
 * **UI Library**: Material UI (MUI)
+* **Form Engine**: `@rjsf/mui` (React JSON Schema Form)
 * **Validation**: AJV8
 
 ## Project Status: MVP
