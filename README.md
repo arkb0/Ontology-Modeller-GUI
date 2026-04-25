@@ -20,14 +20,12 @@ A React-based graphical user interface designed to generate structured JSON mode
 
 * **Framework**: React
 * **UI Library**: Material UI (MUI)
-* **Form Engine**: `@rjsf/mui` (React JSON Schema Form)
 * **Validation**: AJV8
 
 ## Project Status: MVP
 
 ### Known Issues
-* **Data Persistence**: Switching between form tabs currently triggers a state reset, causing data loss. (**Priority: High**)
-* **Performance**: Large TMK models may cause lag during live preview updates; debouncing is implemented but requires further optimisation. (**Priority: Medium**)
+* **Usability**: Room for enhancement.
 
 ## Getting Started
 
