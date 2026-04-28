@@ -32,7 +32,6 @@ jobs:
           npm install
           # Adding CI=false forces the build to continue even with warnings (workaround)
           CI=false npm run build
-          npm run build
 
           # 3. Deployment logic
           echo 'Deploying to gh-pages...'
