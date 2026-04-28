@@ -1,0 +1,50 @@
+name: Deploy to Pages
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build and Deploy
+        run: |
+          # 1. Git Identity
+          git config --global user.email "${{ github.actor }}@users.noreply.github.com"
+          git config --global user.name "${{ github.actor }}"
+
+          # 2. Dependencies and Build
+          npm install
+          npm run build
+
+          # 3. Deployment logic
+          echo 'Deploying to gh-pages...'
+          
+          # CRA uses 'build', Vite uses 'dist'. This check keeps it flexible.
+          if [ -d "dist" ]; then PUBLISH_DIR="dist"; else PUBLISH_DIR="build"; fi
+
+          git add $PUBLISH_DIR -f
+          git commit -m "Deploying build from GitHub Action [skip ci]" 
+
+          # Push the specific folder to the gh-pages branch
+          git push origin `git subtree split --prefix $PUBLISH_DIR main`:refs/heads/gh-pages --force
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Constructing the URL here is cleaner for CRA to "see" it
+          PUBLIC_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+          GITHUB_REPOSITORY: ${{ github.repository }}
