@@ -12,9 +12,13 @@
  *   nodes / edges   – React Flow node & edge arrays (derived from organizer)
  *   direction       – 'LR' | 'TB' layout direction
  *
- * The component is intentionally kept READ-ONLY for now.
- * Interactive hooks (onConnect, onNodesDelete, onEdgesDelete, onPaneClick)
- * are present but empty/commented so they are easy to fill in later.
+ * Interactive features:
+ *   • Drag nodes to reposition them
+ *   • Drag from a Handle to create a new transition
+ *   • Delete key removes selected nodes/edges
+ *   • RMB on node → context menu: set state type OR rename
+ *   • LMB on edge → inline popover to edit dataCondition
+ *   • Undo/redo via Ctrl+Z / Ctrl+Shift+Z (history stored locally)
  *
  * Data flow (current):
  *   organizer prop → organizerToFlow() → { nodes, edges } → React Flow
@@ -42,13 +46,60 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
-import { Box, Menu, MenuItem, ListItemIcon, ListItemText } from '@mui/material';
-import { Flag, CheckCircle, Error, PlayArrow } from '@mui/icons-material'; // Optional: for visual cues
+import {
+  Box, Menu, MenuItem, ListItemIcon, ListItemText,
+  Popover, TextField, Button, Typography, Divider
+} from '@mui/material';
+import { Flag, CheckCircle, Error, PlayArrow, Edit as EditIcon } from '@mui/icons-material';
 import FSMNode    from './FSMNode';
 import FSMEdge    from './FSMEdge';
 import FSMToolbar from './FSMToolbar';
 import { organizerToFlow, removeStateFromOrganizer } from './fsm.utils';
-import { Organizer, FlowGraph, FSMNodeData, FSMEdgeData, FSMState, FSMTransition, LayoutDirection, addStateToOrganizer, addTransitionToOrganizer, removeTransitionFromOrganizer } from './fsm.utils';
+import {
+  Organizer, FlowGraph, FSMNodeData, FSMEdgeData, FSMState, FSMTransition,
+  LayoutDirection, addStateToOrganizer, addTransitionToOrganizer,
+  removeTransitionFromOrganizer
+} from './fsm.utils';
+
+// ---------------------------------------------------------------------------
+// Undo/redo history — a simple stack pair kept inside FSMCanvas.
+// We only store organizer snapshots (plain objects, cheap to copy).
+// Max depth is 64 steps — more than enough for any real editing session.
+// ---------------------------------------------------------------------------
+const HISTORY_LIMIT = 64;
+
+function useOrganizerHistory(initial: Organizer) {
+  const past   = useRef<Organizer[]>([]);
+  const future = useRef<Organizer[]>([]);
+
+  const push = useCallback((snapshot: Organizer) => {
+    past.current = [...past.current.slice(-(HISTORY_LIMIT - 1)), snapshot];
+    future.current = []; // branching clears the redo stack
+  }, []);
+
+  const undo = useCallback((current: Organizer, onUpdate: (o: Organizer) => void) => {
+    if (past.current.length === 0) return;
+    const prev = past.current[past.current.length - 1];
+    past.current = past.current.slice(0, -1);
+    future.current = [current, ...future.current.slice(0, HISTORY_LIMIT - 1)];
+    onUpdate(prev);
+  }, []);
+
+  const redo = useCallback((current: Organizer, onUpdate: (o: Organizer) => void) => {
+    if (future.current.length === 0) return;
+    const next = future.current[0];
+    future.current = future.current.slice(1);
+    past.current = [...past.current.slice(-(HISTORY_LIMIT - 1)), current];
+    onUpdate(next);
+  }, []);
+
+  const canUndo = () => past.current.length > 0;
+  const canRedo = () => future.current.length > 0;
+
+  return { push, undo, redo, canUndo, canRedo };
+}
+
+// ---------------------------------------------------------------------------
 
 interface FSMCanvasProps {
   organizer:   Organizer;
@@ -72,9 +123,52 @@ const EDGE_TYPES = { fsmEdge: FSMEdge };
 function FSMCanvas({ organizer, methodName, onUpdate }: FSMCanvasProps) {
   const [direction, setDirection] = useState<LayoutDirection>('TB');
 
-  // -- State for context menu UI ---------------------------------------
-  const [menuAnchor, setMenuAnchor] = useState<{ mouseX: number; mouseY: number } | null>(null);
+  // -- State for node context menu (RMB on node) ----------------------------
+  const [menuAnchor, setMenuAnchor]   = useState<{ mouseX: number; mouseY: number } | null>(null);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+
+  // -- State for rename popover (triggered from node context menu) ----------
+  const [renameAnchorEl, setRenameAnchorEl] = useState<HTMLElement | null>(null);
+  const [renameValue, setRenameValue]       = useState('');
+  const [renameOldName, setRenameOldName]   = useState('');
+  // We anchor the rename popover to a stable div positioned at the menu coords
+  const renameAnchorRef = useRef<HTMLDivElement>(null);
+  const [renamePos, setRenamePos] = useState<{ top: number; left: number } | null>(null);
+
+  // -- State for edge condition popover (LMB on edge) -----------------------
+  const [conditionEdge, setConditionEdge]   = useState<Edge<FSMEdgeData> | null>(null);
+  const [conditionValue, setConditionValue] = useState('');
+  const [conditionPos, setConditionPos]     = useState<{ top: number; left: number } | null>(null);
+
+  // -- Undo / redo ----------------------------------------------------------
+  const history = useOrganizerHistory(organizer);
+
+  // Wrap onUpdate so that every outbound change is pushed to history first.
+  const commitUpdate = useCallback((updated: Organizer) => {
+    if (!onUpdate) return;
+    history.push(organizer); // snapshot the state BEFORE the change
+    onUpdate(updated);
+  }, [organizer, onUpdate, history]);
+
+  // Keyboard shortcuts: Ctrl+Z / Ctrl+Shift+Z
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!onUpdate) return;
+      // Don't steal from Monaco or any <input> / <textarea>
+      const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea') return;
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        history.undo(organizer, onUpdate);
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+        e.preventDefault();
+        history.redo(organizer, onUpdate);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [organizer, onUpdate, history]);
 
   // Track previous direction to detect toggle vs form edit
   const prevDirRef = useRef<LayoutDirection>(direction);
@@ -134,9 +228,9 @@ function FSMCanvas({ organizer, methodName, onUpdate }: FSMCanvasProps) {
       };
 
       // Sync back to webform
-      onUpdate(addTransitionToOrganizer(organizer, newTransition));
+      commitUpdate(addTransitionToOrganizer(organizer, newTransition));
     },
-    [organizer, onUpdate]
+    [organizer, commitUpdate]
   );
 
   // -- Handle node deletion -----------------------------------------
@@ -149,8 +243,8 @@ function FSMCanvas({ organizer, methodName, onUpdate }: FSMCanvasProps) {
       updatedOrg = removeStateFromOrganizer(updatedOrg, node.id);
     });
 
-    onUpdate(updatedOrg);
-  }, [organizer, onUpdate]);
+    commitUpdate(updatedOrg);
+  }, [organizer, commitUpdate]);
 
   // -- Handle edge deletion -----------------------------------------
   const onEdgesDelete = useCallback((deleted: Edge[]) => {
@@ -161,8 +255,8 @@ function FSMCanvas({ organizer, methodName, onUpdate }: FSMCanvasProps) {
       updatedOrg = removeTransitionFromOrganizer(updatedOrg, edge.source, edge.target);
     });
     
-    onUpdate(updatedOrg);
-  }, [organizer, onUpdate]);
+    commitUpdate(updatedOrg);
+  }, [organizer, commitUpdate]);
 
   // -- Add node logic (triggered by Toolbar button) ------------------
   const handleAddNode = useCallback(() => {
@@ -174,10 +268,10 @@ function FSMCanvas({ organizer, methodName, onUpdate }: FSMCanvasProps) {
       goalInvocation: { goalReference: '', type: 'task', actualArguments: [] }
     };
 
-    onUpdate(addStateToOrganizer(organizer, newState));
-  }, [organizer, onUpdate]);
+    commitUpdate(addStateToOrganizer(organizer, newState));
+  }, [organizer, commitUpdate]);
 
-  // -- Add node on canvas click (when in addNode edit mode) ----------
+  // -- Add node on canvas right-click -------------------------------
   const onPaneContextMenu = useCallback((event: React.MouseEvent) => {
     event.preventDefault();
     if (!onUpdate) return;
@@ -192,35 +286,78 @@ function FSMCanvas({ organizer, methodName, onUpdate }: FSMCanvasProps) {
       goalInvocation: { goalReference: '', type: 'task', actualArguments: [] }
     };
 
-    onUpdate(addStateToOrganizer(organizer, newState));
-  }, [organizer, onUpdate, screenToFlowPosition]);
+    commitUpdate(addStateToOrganizer(organizer, newState));
+  }, [organizer, commitUpdate, screenToFlowPosition]);
 
-  const handleMenuClose = () => {
+  // -- Node RMB context menu ----------------------------------------
+  const handleMenuClose = useCallback(() => {
     setMenuAnchor(null);
     setSelectedNode(null);
-  };
+  }, []);
 
-  const handleSetStateType = (type: 'start' | 'success' | 'failure') => {
+  const handleSetStateType = useCallback((type: 'start' | 'success' | 'failure') => {
     if (selectedNode && onUpdate) {
       const updatedOrg = { ...organizer };
       const nodeId = selectedNode.id;
 
       // 1. Clear this specific node if it currently occupies another role
-      if (updatedOrg.startState === nodeId) updatedOrg.startState = '';
+      if (updatedOrg.startState   === nodeId) updatedOrg.startState   = '';
       if (updatedOrg.successState === nodeId) updatedOrg.successState = '';
       if (updatedOrg.failureState === nodeId) updatedOrg.failureState = '';
 
       // 2. Assign the new role (overwriting whoever had it previously)
-      if (type === 'start') updatedOrg.startState = nodeId;
+      if (type === 'start')   updatedOrg.startState   = nodeId;
       if (type === 'success') updatedOrg.successState = nodeId;
       if (type === 'failure') updatedOrg.failureState = nodeId;
 
-      onUpdate(updatedOrg);
+      commitUpdate(updatedOrg);
     }
     handleMenuClose();
-  };
+  }, [selectedNode, organizer, commitUpdate, handleMenuClose]);
 
-  // -- Handle node right-click to set state type ------------------------
+  // -- Rename state -------------------------------------------------
+  const handleOpenRename = useCallback(() => {
+    if (!selectedNode) return;
+    const pos = menuAnchor ? { top: menuAnchor.mouseY, left: menuAnchor.mouseX } : null;
+    // Capture the id before closing:
+    setRenameOldName(selectedNode.id); // stable — won't be cleared by handleMenuClose
+    setRenameValue(selectedNode.id);
+    setRenamePos(pos);
+    handleMenuClose();                 // this nulls selectedNode
+  }, [selectedNode, menuAnchor, handleMenuClose]);
+
+  const handleRenameConfirm = useCallback(() => {
+    if (!renameOldName || !onUpdate || !renameValue.trim()) {
+      setRenamePos(null);
+      return;
+    }
+
+    const oldName = renameOldName;
+    const newName = renameValue.trim();
+    if (oldName === newName) { setRenamePos(null); return; }
+
+    // Rename everywhere: states array, transitions, and the special name fields
+    const updatedOrg: Organizer = {
+      ...organizer,
+      startState:   organizer.startState   === oldName ? newName : organizer.startState,
+      successState: organizer.successState === oldName ? newName : organizer.successState,
+      failureState: organizer.failureState === oldName ? newName : organizer.failureState,
+      states: (organizer.states || []).map(s =>
+        s.name === oldName ? { ...s, name: newName } : s
+      ),
+      transitions: (organizer.transitions || []).map(t => ({
+        ...t,
+        sourceState: t.sourceState === oldName ? newName : t.sourceState,
+        targetState: t.targetState === oldName ? newName : t.targetState,
+      })),
+    };
+
+    commitUpdate(updatedOrg);
+    setRenamePos(null);
+    setRenameOldName('');
+  }, [renameOldName, renameValue, organizer, commitUpdate]);
+
+  // -- Handle node right-click to set state type --------------------
   const onNodeContextMenu = useCallback(
     (event: React.MouseEvent, node: Node) => {
       event.preventDefault();
@@ -234,6 +371,36 @@ function FSMCanvas({ organizer, methodName, onUpdate }: FSMCanvasProps) {
     },
     [onUpdate]
   );
+
+  // -- LMB on edge → open condition editor popover ------------------
+  const onEdgeClick = useCallback(
+    (event: React.MouseEvent, edge: Edge) => {
+      if (!onUpdate) return;
+      setConditionEdge(edge as Edge<FSMEdgeData>);
+      setConditionValue((edge.data as FSMEdgeData)?.condition ?? '');
+      setConditionPos({ top: event.clientY, left: event.clientX });
+    },
+    [onUpdate]
+  );
+
+  const handleConditionConfirm = useCallback(() => {
+    if (!conditionEdge || !onUpdate) { setConditionPos(null); return; }
+
+    // Find the matching transition and update its dataCondition
+    const updatedOrg: Organizer = {
+      ...organizer,
+      transitions: (organizer.transitions || []).map(t => {
+        if (t.sourceState === conditionEdge.source && t.targetState === conditionEdge.target) {
+          return { ...t, dataCondition: conditionValue };
+        }
+        return t;
+      }),
+    };
+
+    commitUpdate(updatedOrg);
+    setConditionPos(null);
+    setConditionEdge(null);
+  }, [conditionEdge, conditionValue, organizer, commitUpdate]);
 
   const handleDirectionChange = useCallback((newDir: LayoutDirection) => {
     setDirection(newDir);
@@ -288,7 +455,8 @@ function FSMCanvas({ organizer, methodName, onUpdate }: FSMCanvasProps) {
         onNodesDelete={onNodesDelete}
         onEdgesDelete={onEdgesDelete}
         onPaneContextMenu={onPaneContextMenu} // Added for right-click to add node
-        onNodeContextMenu={onNodeContextMenu} // For right-click node type selection
+        onNodeContextMenu={onNodeContextMenu} // For right-click node type selection & rename
+        onEdgeClick={onEdgeClick}             // LMB on edge → edit condition
         nodeTypes={NODE_TYPES}
         edgeTypes={EDGE_TYPES}
         fitView
@@ -339,7 +507,7 @@ function FSMCanvas({ organizer, methodName, onUpdate }: FSMCanvasProps) {
         />
       </ReactFlow>
 
-      {/* --- Context Menu UI --- */}
+      {/* --- Node RMB context menu --- */}
       <Menu
         open={menuAnchor !== null}
         onClose={handleMenuClose}
@@ -355,11 +523,19 @@ function FSMCanvas({ organizer, methodName, onUpdate }: FSMCanvasProps) {
               background: '#1e1e2e', 
               color: '#cdd6f4',
               border: '1px solid #313244',
-              minWidth: 180 
+              minWidth: 200,
             }
           }
         }}
       >
+        {/* Rename */}
+        <MenuItem onClick={handleOpenRename}>
+          <ListItemIcon><EditIcon sx={{ color: '#89b4fa' }} fontSize="small" /></ListItemIcon>
+          <ListItemText primary="Rename state" />
+        </MenuItem>
+
+        <Divider sx={{ borderColor: '#313244', my: 0.5 }} />
+
         <MenuItem onClick={() => handleSetStateType('start')}>
           <ListItemIcon><PlayArrow sx={{ color: '#a6e3a1' }} fontSize="small" /></ListItemIcon>
           <ListItemText primary="Set as Start State" />
@@ -373,6 +549,135 @@ function FSMCanvas({ organizer, methodName, onUpdate }: FSMCanvasProps) {
           <ListItemText primary="Set as Failure State" />
         </MenuItem>
       </Menu>
+
+      {/* --- Rename popover (anchored to a positioned ghost div) --- */}
+      {renamePos && (
+        <div
+          style={{
+            position: 'fixed',
+            top:      renamePos.top,
+            left:     renamePos.left,
+            width:    1,
+            height:   1,
+            pointerEvents: 'none',
+          }}
+          ref={renameAnchorRef}
+        />
+      )}
+      <Popover
+        open={renamePos !== null}
+        anchorReference="anchorPosition"
+        {...(renamePos && {
+          anchorPosition: { top: renamePos.top, left: renamePos.left }
+        })}
+        onClose={() => setRenamePos(null)}
+        PaperProps={{
+          sx: {
+            background: '#1e1e2e',
+            border: '1px solid #313244',
+            p: 2,
+            minWidth: 260,
+          }
+        }}
+      >
+        <Typography variant="caption" sx={{ color: '#7f849c', display: 'block', mb: 1 }}>
+          Rename state
+        </Typography>
+        <TextField
+          size="small"
+          fullWidth
+          autoFocus
+          value={renameValue}
+          onChange={(e) => setRenameValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter')  handleRenameConfirm();
+            if (e.key === 'Escape') setRenamePos(null);
+          }}
+          inputProps={{ style: { fontFamily: 'monospace', color: '#cdd6f4' } }}
+          sx={{
+            mb: 1,
+            '& .MuiOutlinedInput-root': {
+              '& fieldset':        { borderColor: '#313244' },
+              '&:hover fieldset':  { borderColor: '#89b4fa' },
+              '&.Mui-focused fieldset': { borderColor: '#89b4fa' },
+            },
+          }}
+        />
+        <Box display="flex" gap={1} justifyContent="flex-end">
+          <Button size="small" onClick={() => setRenamePos(null)}
+            sx={{ color: '#7f849c' }}>
+            Cancel
+          </Button>
+          <Button size="small" variant="contained" onClick={handleRenameConfirm}
+            sx={{ background: '#89b4fa', color: '#1e1e2e', '&:hover': { background: '#cdd6f4' } }}>
+            Rename
+          </Button>
+        </Box>
+      </Popover>
+
+      {/* --- Edge LMB condition editor popover --- */}
+      <Popover
+        open={conditionPos !== null}
+        anchorReference="anchorPosition"
+        {...(conditionPos && {
+          anchorPosition: { top: conditionPos.top, left: conditionPos.left }
+        })}
+        onClose={() => { setConditionPos(null); setConditionEdge(null); }}
+        PaperProps={{
+          sx: {
+            background: '#1e1e2e',
+            border: '1px solid #313244',
+            p: 2,
+            minWidth: 300,
+          }
+        }}
+      >
+        <Typography variant="caption" sx={{ color: '#7f849c', display: 'block', mb: 0.5 }}>
+          Data condition
+        </Typography>
+        {conditionEdge && (
+          <Typography variant="caption" sx={{ color: '#89b4fa', fontFamily: 'monospace', display: 'block', mb: 1 }}>
+            {conditionEdge.source} → {conditionEdge.target}
+          </Typography>
+        )}
+        <TextField
+          size="small"
+          fullWidth
+          autoFocus
+          multiline
+          minRows={2}
+          placeholder="e.g. !diagnosis.confirmed && retryCount < 3"
+          value={conditionValue}
+          onChange={(e) => setConditionValue(e.target.value)}
+          onKeyDown={(e) => {
+            // Ctrl+Enter confirms; plain Enter allows newlines in the condition
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') handleConditionConfirm();
+            if (e.key === 'Escape') { setConditionPos(null); setConditionEdge(null); }
+          }}
+          inputProps={{ style: { fontFamily: 'monospace', fontSize: '0.8rem', color: '#cdd6f4' } }}
+          sx={{
+            mb: 1,
+            '& .MuiOutlinedInput-root': {
+              '& fieldset':        { borderColor: '#313244' },
+              '&:hover fieldset':  { borderColor: '#89b4fa' },
+              '&.Mui-focused fieldset': { borderColor: '#89b4fa' },
+            },
+          }}
+        />
+        <Typography variant="caption" sx={{ color: '#585b70', display: 'block', mb: 1 }}>
+          Ctrl+Enter to confirm
+        </Typography>
+        <Box display="flex" gap={1} justifyContent="flex-end">
+          <Button size="small" onClick={() => { setConditionPos(null); setConditionEdge(null); }}
+            sx={{ color: '#7f849c' }}>
+            Cancel
+          </Button>
+          <Button size="small" variant="contained" onClick={handleConditionConfirm}
+            sx={{ background: '#89b4fa', color: '#1e1e2e', '&:hover': { background: '#cdd6f4' } }}>
+            Save
+          </Button>
+        </Box>
+      </Popover>
     </Box>
   );
 }

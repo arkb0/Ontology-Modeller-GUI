@@ -1,7 +1,7 @@
 import React, { useCallback, memo } from 'react';
-import { Paper, Box, Typography, IconButton, Tooltip } from '@mui/material';
-import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
+import { Paper, Box, Typography, Tooltip } from '@mui/material';
 import DebouncedTextField from './DebouncedTextField';
+import ConfirmDeleteButton from './ConfirmDeleteButton';
 
 /**
  * Define the shape of an individual assertion.
@@ -38,11 +38,11 @@ const AssertionEntryFields = memo(function AssertionEntryFields({
     <Paper variant="outlined" sx={{ p: 2, mb: 1 }}>
       <Box display="flex" justifyContent="space-between" alignItems="center">
         <Typography variant="subtitle2" color="textSecondary">Assertion</Typography>
-        <Tooltip title="Remove this assertion">
-          <IconButton size="small" onClick={onRemove} color="error">
-            <RemoveCircleOutlineIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
+        <ConfirmDeleteButton
+          onConfirm={onRemove}
+          tooltip="Remove this assertion"
+          message="Remove this assertion? This cannot be undone."
+        />
       </Box>
       <DebouncedTextField
         label="Name"

@@ -3,12 +3,14 @@ import {
   Paper, Box, Typography, IconButton, Tooltip,
   Accordion, AccordionSummary, AccordionDetails
 } from '@mui/material';
-import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
-import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import { 
+  AddCircleOutlined as AddCircleOutlineIcon, 
+  ExpandMore as ExpandMoreIcon 
+} from '@mui/icons-material';
 import { replaceAt, removeAt } from '../../utils/helpers';
 import DebouncedTextField from '../common/DebouncedTextField';
 import StringListField from '../common/StringListField';
+import ConfirmDeleteButton from '../common/ConfirmDeleteButton';
 
 interface EntryProps<T> {
   index?: number;
@@ -28,11 +30,11 @@ const MeansEntryFields = memo(function MeansEntryFields({ means, onChange, onRem
     <Paper variant="outlined" sx={{ p: 2, mb: 1 }}>
       <Box display="flex" justifyContent="space-between" alignItems="center">
         <Typography variant="subtitle2" color="textSecondary">Means Entry</Typography>
-        <Tooltip title="Remove this means entry">
-          <IconButton size="small" onClick={onRemove} color="error">
-            <RemoveCircleOutlineIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
+        <ConfirmDeleteButton
+          onConfirm={onRemove}
+          tooltip="Remove this means entry"
+          message="Remove this means entry?"
+        />
       </Box>
       <Box mt={1}>
         <DebouncedTextField
@@ -73,15 +75,11 @@ const TaskEntryFields = memo(function TaskEntryFields({ task, onChange, onRemove
           <Typography variant="subtitle1">
             Task #{index + 1}{task.name ? `: ${task.name}` : ''}
           </Typography>
-          <Tooltip title="Remove this task">
-            <IconButton
-              size="small"
-              onClick={(e) => { e.stopPropagation(); onRemove(); }}
-              color="error"
-            >
-              <RemoveCircleOutlineIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
+          <ConfirmDeleteButton
+            onConfirm={onRemove}
+            tooltip="Remove this task"
+            message="Remove this task and all its means entries?"
+          />
         </Box>
       </AccordionSummary>
       <AccordionDetails>

@@ -4,14 +4,16 @@ import {
   Accordion, AccordionSummary, AccordionDetails,
   Divider, Switch, FormControlLabel
 } from '@mui/material';
-import VisibilityIcon from '@mui/icons-material/Visibility';
-import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
-import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import { 
+  Visibility as VisibilityIcon, 
+  AddCircleOutlined as AddCircleOutlineIcon, 
+  ExpandMore as ExpandMoreIcon 
+} from '@mui/icons-material';
 import { replaceAt, removeAt } from '../../utils/helpers';
 import DebouncedTextField from '../common/DebouncedTextField';
 import StringListField from '../common/StringListField';
 import AssertionEntryFields from '../common/AssertionEntryFields';
+import ConfirmDeleteButton from '../common/ConfirmDeleteButton';
 
 interface StateEntryProps {
   state: any;
@@ -38,11 +40,11 @@ const StateEntryFields = memo(function StateEntryFields({ state, onChange, onRem
     <Paper variant="outlined" sx={{ p: 2, mb: 1 }}>
       <Box display="flex" justifyContent="space-between" alignItems="center">
         <Typography variant="subtitle2" color="textSecondary">State</Typography>
-        <Tooltip title="Remove this state">
-          <IconButton size="small" onClick={onRemove} color="error">
-            <RemoveCircleOutlineIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
+        <ConfirmDeleteButton
+          onConfirm={onRemove}
+          tooltip="Remove this state"
+          message="Remove this state? Any transitions referencing it will also be removed."
+        />
       </Box>
       <DebouncedTextField
         label="State Name"
@@ -101,11 +103,11 @@ const TransitionEntryFields = memo(function TransitionEntryFields({ transition, 
     <Paper variant="outlined" sx={{ p: 2, mb: 1 }}>
       <Box display="flex" justifyContent="space-between" alignItems="center">
         <Typography variant="subtitle2" color="textSecondary">Transition</Typography>
-        <Tooltip title="Remove this transition">
-          <IconButton size="small" onClick={onRemove} color="error">
-            <RemoveCircleOutlineIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
+        <ConfirmDeleteButton
+          onConfirm={onRemove}
+          tooltip="Remove this transition"
+          message="Remove this transition?"
+        />
       </Box>
       <DebouncedTextField
         label="Source State"
@@ -303,15 +305,11 @@ const MethodEntryFields = memo(function MethodEntryFields({ method, onChange, on
               </Tooltip>
             )}
           </Box>
-          <Tooltip title="Remove this method">
-            <IconButton
-              size="small"
-              onClick={(e) => { e.stopPropagation(); onRemove(); }}
-              color="error"
-            >
-              <RemoveCircleOutlineIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
+          <ConfirmDeleteButton
+            onConfirm={onRemove}
+            tooltip="Remove this method"
+            message="Remove this method and all its states, transitions, and assertions?"
+          />
         </Box>
       </AccordionSummary>
       <AccordionDetails>

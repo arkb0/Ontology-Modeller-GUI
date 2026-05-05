@@ -3,12 +3,14 @@ import {
   Paper, Box, Typography, TextField, IconButton, Tooltip,
   Accordion, AccordionSummary, AccordionDetails
 } from '@mui/material';
-import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
-import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import { 
+  AddCircleOutlined as AddCircleOutlineIcon, 
+  ExpandMore as ExpandMoreIcon 
+} from '@mui/icons-material';
 import { replaceAt, removeAt } from '../../utils/helpers';
 import DebouncedTextField from '../common/DebouncedTextField';
 import StringListField from '../common/StringListField';
+import ConfirmDeleteButton from '../common/ConfirmDeleteButton';
 
 interface EntryProps<T> {
   index: number;
@@ -40,11 +42,11 @@ const ConceptPropertyFields = memo(function ConceptPropertyFields({ property, on
         onChange={(val) => update('type', val)}
         sx={{ flex: 1 }}
       />
-      <Tooltip title="Remove this property">
-        <IconButton size="small" onClick={onRemove} color="error">
-          <RemoveCircleOutlineIcon fontSize="small" />
-        </IconButton>
-      </Tooltip>
+      <ConfirmDeleteButton
+        onConfirm={onRemove}
+        tooltip="Remove this property"
+        message="Remove this property?"
+      />
     </Box>
   );
 });
@@ -68,15 +70,11 @@ export const ConceptEntryFields = memo(function ConceptEntryFields({ concept, on
           <Typography variant="subtitle1">
             Concept #{index + 1}{concept.name ? `: ${concept.name}` : ''}
           </Typography>
-          <Tooltip title="Remove this concept">
-            <IconButton
-              size="small"
-              onClick={(e) => { e.stopPropagation(); onRemove(); }}
-              color="error"
-            >
-              <RemoveCircleOutlineIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
+          <ConfirmDeleteButton
+            onConfirm={onRemove}
+            tooltip="Remove this concept"
+            message="Remove this concept and all its properties?"
+          />
         </Box>
       </AccordionSummary>
       <AccordionDetails>
@@ -170,15 +168,11 @@ export const InstanceEntryFields = memo(function InstanceEntryFields({ instance,
           <Typography variant="subtitle1">
             Instance #{index + 1}{instance.name ? `: ${instance.name}` : ''}
           </Typography>
-          <Tooltip title="Remove this instance">
-            <IconButton
-              size="small"
-              onClick={(e) => { e.stopPropagation(); onRemove(); }}
-              color="error"
-            >
-              <RemoveCircleOutlineIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
+          <ConfirmDeleteButton
+            onConfirm={onRemove}
+            tooltip="Remove this instance"
+            message="Remove this instance?"
+          />
         </Box>
       </AccordionSummary>
       <AccordionDetails>
@@ -229,11 +223,11 @@ export const RelationEntryFields = memo(function RelationEntryFields({ relation,
         <Typography variant="subtitle2" color="textSecondary">
           Relation #{index + 1}{relation.name ? `: ${relation.name}` : ''}
         </Typography>
-        <Tooltip title="Remove this relation">
-          <IconButton size="small" onClick={onRemove} color="error">
-            <RemoveCircleOutlineIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
+        <ConfirmDeleteButton
+          onConfirm={onRemove}
+          tooltip="Remove this relation"
+          message="Remove this relation?"
+        />
       </Box>
       <DebouncedTextField
         label="Name"
@@ -276,11 +270,11 @@ export const TripleEntryFields = memo(function TripleEntryFields({ triple, onCha
         <Typography variant="subtitle2" color="textSecondary">
           Triple #{index + 1}
         </Typography>
-        <Tooltip title="Remove this triple">
-          <IconButton size="small" onClick={onRemove} color="error">
-            <RemoveCircleOutlineIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
+        <ConfirmDeleteButton
+          onConfirm={onRemove}
+          tooltip="Remove this triple"
+          message="Remove this triple?"
+        />
       </Box>
       <DebouncedTextField
         label="Instance 1"

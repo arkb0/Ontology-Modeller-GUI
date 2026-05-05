@@ -14,8 +14,8 @@ import { useMediaQuery } from '@mui/material';
 import TaskForm from './components/forms/TaskForm';
 import MethodForm from './components/forms/MethodForm';
 import KnowledgeForm from './components/forms/KnowledgeForm';
-// Import the memoised preview pane
-import PreviewPane from './components/common/PreviewPane';
+// Import the Monaco-backed JSON editor pane (replaces the old read-only JSONPretty preview)
+import MonacoPane from './components/common/MonacoPane';
 // Graph visualiser
 import Visualiser from './components/Visualiser';
 
@@ -27,8 +27,8 @@ import Visualiser from './components/Visualiser';
 // Map schemata to an array for easy rendering
 // Provides a centralised list for generating navigation tabs and form content
 const forms = [
-  { label: 'Task Form', FormComponent: TaskForm },
-  { label: 'Method Form', FormComponent: MethodForm },
+  { label: 'Task Form',      FormComponent: TaskForm      },
+  { label: 'Method Form',    FormComponent: MethodForm    },
   { label: 'Knowledge Form', FormComponent: KnowledgeForm },
 ];
 
@@ -68,7 +68,7 @@ function App() {
   const [localData, setLocalData] = useState<any>({});
   // Callback function for final form submission (currently logs to console)
   const onSubmit = ({ formData }: { formData: any }) => console.log("Data submitted: ", formData);
-  // State to toggle between JSON preview and Graph visualiser
+  // State to toggle between JSON editor and Graph visualiser
   const [viewMode, setViewMode] = useState<'json' | 'graph'>('json');
   // Track the current active method to update the graph preview pane
   const [activeMethodIdx, setActiveMethodIdx] = useState<number>(0);
@@ -219,6 +219,15 @@ function App() {
     });
   }, [tabIndex]);
 
+  // Handler for Monaco editor edits propagating back into the form state.
+  // The Monaco pane calls this when the user edits JSON directly.
+  // We route it through handleFormChange so localStorage, localData, etc.
+  // all stay consistent — Monaco is just another way to edit the same data.
+  const handleMonacoUpdate = useCallback((parsed: any) => {
+    handleFormChange(parsed);
+    setPreviewData(parsed);
+  }, [handleFormChange]);
+
   // Resolve the correct form component for the active tab
   const activeFormEntry = forms[tabIndex];
   if (!activeFormEntry) return null;
@@ -261,7 +270,7 @@ function App() {
     </Paper>
   );
 
-  // The preview pane — always rendered, content freezes when live preview is off
+  // The preview/editor pane — always rendered, content freezes when live preview is off
   const previewPane = (
     <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
       {/* Toggle Header for the right pane */}
@@ -277,8 +286,10 @@ function App() {
       </Box>
 
       {viewMode === 'json' ? (
-        <PreviewPane
+        <MonacoPane
           data={previewData}
+          onUpdate={handleMonacoUpdate}
+          darkMode={darkMode}
           backgroundColor={theme.palette.background.paper}
         />
       ) : (
@@ -346,7 +357,7 @@ function App() {
           </Button>
         </Box>
 
-        {/* Main content area containing the form and the live preview */}
+        {/* Main content area containing the form and the live JSON editor / graph */}
         <Box mt={4} display="flex" gap={3}>
           {swapLayout ? (
             <>

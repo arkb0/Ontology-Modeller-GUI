@@ -1,19 +1,19 @@
 import React, { useCallback, memo } from 'react';
 import { Box, Typography, IconButton, Tooltip } from '@mui/material';
-import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
-import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
+import { AddCircleOutlined as AddCircleOutlineIcon } from '@mui/icons-material';
 import { replaceAt, removeAt } from '../../utils/helpers';
 import DebouncedTextField from './DebouncedTextField';
+import ConfirmDeleteButton from './ConfirmDeleteButton';
 
 /**
  * Props for the individual list item.
  */
 interface StringListItemProps {
-  index: number;
-  value: string;
-  placeholder?: string;
+  index:         number;
+  value:         string;
+  placeholder?:  string;
   onChangeValue: (index: number, val: string) => void;
-  onRemove: (index: number) => void;
+  onRemove:      (index: number) => void;
 }
 
 /**
@@ -44,11 +44,11 @@ const StringListItem = memo(function StringListItem({
         onChange={handleChange}
         placeholder={placeholder}
       />
-      <Tooltip title="Remove this entry">
-        <IconButton size="small" onClick={handleRemove} color="error">
-          <RemoveCircleOutlineIcon fontSize="small" />
-        </IconButton>
-      </Tooltip>
+      <ConfirmDeleteButton
+        onConfirm={handleRemove}
+        tooltip="Remove this entry"
+        message="Remove this entry?"
+      />
     </Box>
   );
 });
@@ -57,9 +57,9 @@ const StringListItem = memo(function StringListItem({
  * Props for the main StringListField component.
  */
 interface StringListFieldProps {
-  label: string;
-  values?: string[];
-  onChange: (newValues: string[]) => void;
+  label:       string;
+  values?:     string[];
+  onChange:    (newValues: string[]) => void;
   placeholder?: string;
 }
 
