@@ -1,0 +1,15 @@
+{
+  "files": {
+    "main.css": "https://arkb0.github.io/Ontology-Modeller-GUI/static/css/main.616ba065.css",
+    "main.js": "https://arkb0.github.io/Ontology-Modeller-GUI/static/js/main.24afe6f8.js",
+    "static/js/453.8314f048.chunk.js": "https://arkb0.github.io/Ontology-Modeller-GUI/static/js/453.8314f048.chunk.js",
+    "index.html": "https://arkb0.github.io/Ontology-Modeller-GUI/index.html",
+    "main.616ba065.css.map": "https://arkb0.github.io/Ontology-Modeller-GUI/static/css/main.616ba065.css.map",
+    "main.24afe6f8.js.map": "https://arkb0.github.io/Ontology-Modeller-GUI/static/js/main.24afe6f8.js.map",
+    "453.8314f048.chunk.js.map": "https://arkb0.github.io/Ontology-Modeller-GUI/static/js/453.8314f048.chunk.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.616ba065.css",
+    "static/js/main.24afe6f8.js"
+  ]
+}
