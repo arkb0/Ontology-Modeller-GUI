@@ -18,6 +18,10 @@ import KnowledgeForm from './components/forms/KnowledgeForm';
 import MonacoPane from './components/common/MonacoPane';
 // Graph visualiser
 import Visualiser from './components/Visualiser';
+// TMK format serialiser
+import { serialiseTMK } from './utils/tmk.serialiser';
+// Checkbox for the TMK export option
+import { FormGroup, Checkbox, FormControlLabel as FCL } from '@mui/material';
 
 // -----------------------------------------------------------------------------
 // FORM REGISTRY
@@ -72,6 +76,8 @@ function App() {
   const [viewMode, setViewMode] = useState<'json' | 'graph'>('json');
   // Track the current active method to update the graph preview pane
   const [activeMethodIdx, setActiveMethodIdx] = useState<number>(0);
+  // Whether to use keyword arguments in the .tmk export
+  const [tmkKeywords, setTmkKeywords] = useState(false);
 
   // Sync localData to the 'slow' global state only when the user stops typing
   useEffect(() => {
@@ -167,6 +173,23 @@ function App() {
     URL.revokeObjectURL(url);
   }, [formData, tabIndex]);
 
+  // Export all three model slices as a single .tmk file
+  const handleSaveTMK = useCallback(() => {
+    const text = serialiseTMK(
+      formDataByTab[0],
+      formDataByTab[1],
+      formDataByTab[2],
+      tmkKeywords,
+    );
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = 'model.tmk';
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [formDataByTab, tmkKeywords]);
+
   // Load JSON from disk
   // Reads a local file and synchronises it with the form's state
   const handleLoad = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
@@ -244,7 +267,7 @@ function App() {
         onActiveMethodChange={setActiveMethodIdx}
         activeMethodIndex={activeMethodIdx}
       />
-      <Box display="flex" gap={2} mt={2}>
+      <Box display="flex" gap={2} mt={2} flexWrap="wrap" alignItems="center">
         <Button variant="contained" color="primary" onClick={handleSave}>Save JSON</Button>
         <Button variant="outlined" component="label">
           Load JSON
@@ -266,6 +289,26 @@ function App() {
         >
           Clear All
         </Button>
+
+        {/* TMK export — always exports all three slices into one file */}
+        <Box display="flex" alignItems="center" gap={1} sx={{ ml: 'auto' }}>
+          <FormControlLabel
+            control={
+              <Checkbox
+                size="small"
+                checked={tmkKeywords}
+                onChange={() => setTmkKeywords(k => !k)}
+              />
+            }
+            label={
+              <Typography variant="caption">Keyword args</Typography>
+            }
+            sx={{ mr: 0 }}
+          />
+          <Button variant="outlined" onClick={handleSaveTMK}>
+            Export .tmk
+          </Button>
+        </Box>
       </Box>
     </Paper>
   );
