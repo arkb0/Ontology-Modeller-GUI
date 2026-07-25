@@ -9,17 +9,17 @@
  *   • Keyword     --> `key=value` pairs in any order
  *
  * No positional arguments may follow keyword arguments (mirrors Python's rule).
- * This module always emits one style or the other — never mixed — per block,
+ * This module always emits one style or the other - never mixed - per block,
  * controlled by the `useKeywords` flag passed to `serialise()`.
  *
  * Relationship to the schemas:
  *   Task model   --> Goal(…) blocks       (Tasks are Goals in .tmk vocabulary)
- *   Method model --> Mechanism(…) blocks (atomic) | Organizer(…) + State(…) +
+ *   Method model --> Mechanism(…) blocks (atomic) | O`rganizer(…) + State(…) +
  *                  Transition(…) blocks (non-atomic)
  *   Knowledge    --> Concept(…) / Relation(…) / Triple(…) / Assertion(…) blocks
  *
  * Fields with no data are emitted as "" (string) or {} (set/list) as
- * appropriate — the format does not enforce required fields at this stage.
+ * appropriate - the format does not enforce required fields at this stage.
  */
 
 // ---------------------------------------------------------------------------
@@ -449,7 +449,7 @@ function serialiseKnowledgeModel(data: any, useKeywords: boolean): string {
 
   concepts.forEach(c => lines.push(serialiseConcept(c, useKeywords)));
 
-  // Instances are treated as Concept instances — no dedicated .tmk block defined
+  // Instances are treated as Concept instances - no dedicated .tmk block defined
   // in the field spec, so we emit them as comments to preserve the data visibly
   // without inventing a new keyword.
   if (instances.length > 0) {
@@ -500,10 +500,405 @@ export function serialiseTMK(
   if (knowledgeSection) sections.push(knowledgeSection);
 
   if (sections.length === 0) {
-    return '(* Empty TMK model — fill in the forms and export again. *)\n';
+    return '(* Empty TMK model - fill in the forms and export again. *)\n';
   }
 
   // File-level header comment
-  const header = `(* TMK Model — exported by TMK Modeller *)\n`;
+  const header = `(* TMK Model - exported by TMK Modeller *)\n`;
   return header + '\n' + sections.join('\n\n');
+}
+
+// ===========================================================================
+// DESERIALISER  (.tmk → JSON)
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Parsing primitives
+// ---------------------------------------------------------------------------
+
+/**
+ * Unquote a "..." string and unescape backslashes.
+ * If the value has no surrounding quotes it is returned trimmed as-is
+ * (bare identifiers are valid in several .tmk positions).
+ */
+function unquote(raw: string): string {
+  const t = raw.trim();
+  if (t.startsWith('"') && t.endsWith('"')) {
+    return t.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+  }
+  return t;
+}
+
+/**
+ * Character-level argument splitter.
+ * Splits on commas that are NOT inside (), {}, or "".
+ * Handles escape sequences inside strings.
+ * This is the single most critical primitive - everything else depends on it.
+ */
+function splitArgs(src: string): string[] {
+  const out: string[] = [];
+  let cur = '';
+  let depth = 0;   // combined () and {} nesting level
+  let inStr = false;
+  let esc   = false;
+
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+
+    if (esc)              { cur += ch; esc = false; continue; }
+    if (ch === '\\')      { esc = true; cur += ch;  continue; }
+    if (ch === '"')       { inStr = !inStr; cur += ch; continue; }
+    if (inStr)            { cur += ch; continue; }
+
+    if (ch === '(' || ch === '{') { depth++; cur += ch; continue; }
+    if (ch === ')' || ch === '}') { depth--; cur += ch; continue; }
+
+    if (ch === ',' && depth === 0) {
+      out.push(cur.trim());
+      cur = '';
+      continue;
+    }
+    cur += ch;
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out;
+}
+
+/**
+ * Unwrap a set literal  {a, b, c}  →  ['a', 'b', 'c']
+ * Returns [] for '{}' or missing values.
+ */
+function unwrapSet(raw: string | undefined): string[] {
+  if (!raw) return [];
+  const t = raw.trim();
+  if (!t || t === '{}') return [];
+  if (t.startsWith('{') && t.endsWith('}')) {
+    return splitArgs(t.slice(1, -1)).filter(s => s.length > 0);
+  }
+  // Bare identifier (no braces) - treat as single-element set
+  return [t];
+}
+
+/**
+ * Invert paramSet():  {(name, Type), …}  →  ["name: Type", …]
+ * A tuple with no type  (name)  →  ["name"]
+ */
+function unwrapParams(raw: string | undefined): string[] {
+  return unwrapSet(raw).map(item => {
+    const t = item.trim();
+    if (t.startsWith('(') && t.endsWith(')')) {
+      const parts = splitArgs(t.slice(1, -1));
+      const name  = unquote(parts[0] ?? '');
+      const type  = parts[1] ? unquote(parts[1]) : '';
+      return type ? `${name}: ${type}` : name;
+    }
+    return unquote(t);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Block-level argument resolution
+// ---------------------------------------------------------------------------
+
+/**
+ * Positional field name lists - mirror FIELDS in the serialiser.
+ * These are used when a block's arguments have no `key=` prefix.
+ */
+const POSITIONAL_FIELDS: Record<string, string[]> = {
+  Goal:       ['name', 'description', 'category', 'input_parameters', 'output_parameters', 'givens', 'makes', 'means'],
+  Operation:  ['name', 'description', 'input_parameters', 'output_parameters', 'requires', 'provides'],
+  Organizer:  ['name', 'description', 'input_parameters', 'output_parameters', 'requires', 'provides', 'states', 'transitions', 'start_state', 'success_state', 'failure_state'],
+  State:      ['name', 'description', 'task_invocation'],
+  Transition: ['source_state', 'target_state', 'data_condition'],
+  Concept:    ['name', 'description', 'super_concepts', 'properties'],
+  Relation:   ['name', 'description', 'domain', 'range'],
+  Triple:     ['subject', 'predicate', 'object'],
+  Assertion:  ['name', 'description', 'property', 'equivalent_to'],
+};
+
+/**
+ * Resolve the raw argument list of a block into a key→rawValue map.
+ * Supports keyword args (`key=val`), positional args, and mixed
+ * (keyword args must follow all positional args, matching Python's rule).
+ */
+function resolveArgs(keyword: string, rawArgs: string[]): Record<string, string> {
+  const fields = POSITIONAL_FIELDS[keyword] ?? [];
+  const result: Record<string, string> = {};
+  let posIdx = 0;
+
+  for (const arg of rawArgs) {
+    // Keyword arg detection: starts with an identifier then '='
+    // We must not mistake a set/tuple containing '=' for a keyword arg,
+    // so we only look at the text before the first '(' or '{'.
+    const kMatch = arg.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*=([\s\S]*)$/);
+    if (kMatch) {
+      result[kMatch[1].trim()] = kMatch[2].trim();
+    } else {
+      const key = fields[posIdx];
+      if (key) result[key] = arg;
+      posIdx++;
+    }
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Block converters  (raw args --> JSON object)
+// ---------------------------------------------------------------------------
+
+function parseGoal(args: Record<string, string>): any {
+  // means: a bare set of mechanism-reference identifiers
+  const meansRaw = unwrapSet(args.means);
+  const means = meansRaw.map(m => ({
+    mechanismReference: unquote(m),
+    actualArguments:    [],
+  }));
+
+  return {
+    name:             unquote(args.name),
+    description:      unquote(args.description),
+    inputParameters:  unwrapParams(args.input_parameters),
+    outputParameters: unwrapParams(args.output_parameters),
+    given:            unquote(args.givens),
+    makes:            unquote(args.makes),
+    means,
+  };
+}
+
+function parseOperation(args: Record<string, string>): any {
+  return {
+    name:             unquote(args.name),
+    description:      unquote(args.description),
+    inputParameters:  unwrapParams(args.input_parameters),
+    outputParameters: unwrapParams(args.output_parameters),
+    requires:         unquote(args.requires),
+    provides:         unquote(args.provides),
+  };
+}
+
+function parseOrganizerHeader(args: Record<string, string>): any {
+  // Returns a Method object with an embedded (initially empty) organizer.
+  return {
+    name:             unquote(args.name),
+    description:      unquote(args.description),
+    inputParameters:  unwrapParams(args.input_parameters),
+    outputParameters: unwrapParams(args.output_parameters),
+    requires:         unquote(args.requires),
+    provides:         unquote(args.provides),
+    organizer: {
+      startState:   unquote(args.start_state),
+      successState: unquote(args.success_state),
+      failureState: unquote(args.failure_state),
+      states:       [],
+      transitions:  [],
+    },
+  };
+}
+
+function parseState(args: Record<string, string>): any {
+  // task_invocation: (goalReference, arg1, arg2, …)
+  let goalReference    = '';
+  let actualArguments: string[] = [];
+
+  const inv = (args.task_invocation ?? '').trim();
+  if (inv.startsWith('(') && inv.endsWith(')')) {
+    const parts = splitArgs(inv.slice(1, -1));
+    goalReference   = unquote(parts[0] ?? '');
+    actualArguments = parts.slice(1).map(unquote);
+  } else if (inv) {
+    goalReference = unquote(inv);
+  }
+
+  return {
+    name: unquote(args.name),
+    goalInvocation: { goalReference, type: 'task', actualArguments },
+  };
+}
+
+function parseTransition(args: Record<string, string>): any {
+  return {
+    sourceState:   unquote(args.source_state),
+    targetState:   unquote(args.target_state),
+    dataCondition: unquote(args.data_condition),
+  };
+}
+
+function parseConcept(args: Record<string, string>): any {
+  // Properties: {Property("name", "type", "default"), …}
+  const properties = unwrapSet(args.properties).map(p => {
+    const t = p.trim();
+    // Match Property(…) - case-insensitive, tolerant of spacing
+    const m = t.match(/^[Pp]roperty\s*\(([\s\S]*)\)$/);
+    if (m) {
+      const parts = splitArgs(m[1]);
+      return { name: unquote(parts[0] ?? ''), type: unquote(parts[1] ?? '') };
+    }
+    // Bare identifier - treat as name with empty type
+    return { name: unquote(t), type: '' };
+  });
+
+  return {
+    name:         unquote(args.name),
+    description:  unquote(args.description),
+    superConcept: unwrapSet(args.super_concepts).map(unquote),
+    properties,
+  };
+}
+
+function parseRelation(args: Record<string, string>): any {
+  return {
+    name:        unquote(args.name),
+    description: unquote(args.description),
+    domain:      unquote(args.domain),
+    range:       unquote(args.range),
+  };
+}
+
+function parseTriple(args: Record<string, string>): any {
+  return {
+    instance1: unquote(args.subject),
+    relation:  unquote(args.predicate),
+    instance2: unquote(args.object),
+  };
+}
+
+function parseAssertion(args: Record<string, string>): any {
+  return {
+    name:         unquote(args.name),
+    description:  unquote(args.description),
+    equivalentTo: unquote(args.equivalent_to),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Public result type + main entry point
+// ---------------------------------------------------------------------------
+
+export interface TMKParsed {
+  task:      { model: 'Task';      tasks:    any[] };
+  method:    { model: 'Method';    methods:  any[] };
+  knowledge: {
+    model:      'Knowledge';
+    concepts:   any[];
+    instances:  any[];
+    relations:  any[];
+    triples:    any[];
+    assertions: any[];
+  };
+}
+
+/**
+ * deserialiseTMK(fileContent)
+ *
+ * Parses a .tmk document and returns the three JSON slices that map
+ * directly onto formDataByTab[0..2].
+ *
+ * Design notes:
+ *   • Comments (* … *) are stripped first so they never confuse the parser.
+ *   • Instances have no formal .tmk block; they are preserved as structured
+ *     comments by the serialiser and recovered with a targeted regex before
+ *     comment stripping.
+ *   • State and Transition blocks bind to the most recently seen Organizer,
+ *     which mirrors the ordering guarantee enforced by serialiseOrganizer().
+ *   • The parser is deliberately lenient: unknown block keywords are silently
+ *     skipped so hand-authored .tmk files with extra constructs load cleanly.
+ */
+export function deserialiseTMK(fileContent: string): TMKParsed {
+  const result: TMKParsed = {
+    task:      { model: 'Task',      tasks:    [] },
+    method:    { model: 'Method',    methods:  [] },
+    knowledge: { model: 'Knowledge', concepts: [], instances: [], relations: [], triples: [], assertions: [] },
+  };
+
+  // --- 1. Recover instances from their structured comments -----------------
+  // The serialiser emits:  (* Instance: name : concept[ = {"k":"v"}] *)
+  const instanceRx = /\(\*\s*Instance:\s*(\S+)\s*:\s*(\S+)(?:\s*=\s*(.*?))?\s*\*\)/g;
+  let im: RegExpExecArray | null;
+  while ((im = instanceRx.exec(fileContent)) !== null) {
+    let values: any = undefined;
+    if (im[3]) {
+      try { values = JSON.parse(im[3].trim()); } catch { /* malformed - drop values */ }
+    }
+    result.knowledge.instances.push({
+      name:    im[1].trim(),
+      concept: im[2].trim(),
+      ...(values !== undefined ? { values } : {}),
+    });
+  }
+
+  // --- 2. Strip all comments -----------------------------------------------
+  const src = fileContent.replace(/\(\*[\s\S]*?\*\)/g, '');
+
+  // --- 3. Walk every top-level block  Keyword( … ); -----------------------
+  // The regex captures the keyword and the raw interior of the parens.
+  // It is non-greedy and anchored to the closing "); so nested parens in
+  // argument values are handled by splitArgs, not by this regex.
+  const blockRx = /\b([A-Z][a-zA-Z]*)\s*\(\s*([\s\S]*?)\s*\)\s*;/g;
+  let bm: RegExpExecArray | null;
+
+  // The active organizer's inner object - State/Transition blocks push here.
+  let activeOrg: { states: any[]; transitions: any[] } | null = null;
+
+  while ((bm = blockRx.exec(src)) !== null) {
+    const keyword = bm[1];
+    const rawArgs = splitArgs(bm[2]);
+    const args    = resolveArgs(keyword, rawArgs);
+
+    switch (keyword) {
+      case 'Goal':
+        activeOrg = null;
+        result.task.tasks.push(parseGoal(args));
+        break;
+
+      case 'Operation':
+        activeOrg = null;
+        result.method.methods.push(parseOperation(args));
+        break;
+
+      case 'Organizer': {
+        const method = parseOrganizerHeader(args);
+        result.method.methods.push(method);
+        // Bind subsequent State/Transition blocks to this organizer
+        activeOrg = method.organizer;
+        break;
+      }
+
+      case 'State':
+        // Only attach if an Organizer has been seen and not yet closed
+        if (activeOrg) activeOrg.states.push(parseState(args));
+        break;
+
+      case 'Transition':
+        if (activeOrg) activeOrg.transitions.push(parseTransition(args));
+        break;
+
+      case 'Concept':
+        activeOrg = null;
+        result.knowledge.concepts.push(parseConcept(args));
+        break;
+
+      case 'Relation':
+        activeOrg = null;
+        result.knowledge.relations.push(parseRelation(args));
+        break;
+
+      case 'Triple':
+        activeOrg = null;
+        result.knowledge.triples.push(parseTriple(args));
+        break;
+
+      case 'Assertion':
+        activeOrg = null;
+        result.knowledge.assertions.push(parseAssertion(args));
+        break;
+
+      // All other capitalised identifiers (e.g. Property inside a Concept
+      // argument, or future keywords) are skipped - they are consumed as
+      // part of their parent argument string, not as top-level blocks.
+      default:
+        break;
+    }
+  }
+
+  return result;
 }

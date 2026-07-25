@@ -18,8 +18,8 @@ import KnowledgeForm from './components/forms/KnowledgeForm';
 import MonacoPane from './components/common/MonacoPane';
 // Graph visualiser
 import Visualiser from './components/Visualiser';
-// TMK format serialiser
-import { serialiseTMK } from './utils/tmk.serialiser';
+// TMK format serialiser and deserialiser
+import { serialiseTMK, deserialiseTMK, type TMKParsed } from './utils/tmk.serialiser';
 // Checkbox for the TMK export option
 import { FormGroup, Checkbox, FormControlLabel as FCL } from '@mui/material';
 
@@ -233,6 +233,33 @@ function App() {
     event.target.value = '';
   }, [tabIndex]);
 
+  // Load a .tmk file and populate all three form tabs at once
+  const handleLoadTMK = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e: ProgressEvent<FileReader>) => {
+      try {
+        const text = e.target?.result;
+        if (typeof text !== 'string') return;
+
+        const parsed: TMKParsed = deserialiseTMK(text);
+        const newFormData = [parsed.task, parsed.method, parsed.knowledge];
+
+        setFormDataByTab(newFormData);
+        // Sync local fast-state and preview to whichever tab is currently visible
+        setLocalData(newFormData[tabIndex] ?? {});
+        setPreviewData(newFormData[tabIndex] ?? {});
+      } catch (err) {
+        console.error('Failed to parse .tmk file', err);
+        alert('The selected file could not be parsed as a .tmk document.');
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
+  }, [tabIndex]);
+
   // Stabilised onChange handler for the active form component
   const handleFormChange = useCallback((newData: any) => {
     setFormDataByTab(prev => {
@@ -305,6 +332,10 @@ function App() {
             }
             sx={{ mr: 0 }}
           />
+          <Button variant="outlined" component="label">
+            Import .tmk
+            <input type="file" accept=".tmk,text/plain" hidden onChange={handleLoadTMK} />
+          </Button>
           <Button variant="outlined" onClick={handleSaveTMK}>
             Export .tmk
           </Button>
