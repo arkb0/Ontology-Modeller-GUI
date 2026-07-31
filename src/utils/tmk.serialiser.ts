@@ -214,22 +214,24 @@ function serialiseState(state: any, useKeywords: boolean): string {
 
 /**
  * TRANSITION_FIELDS (positional order):
- *   source_state, target_state, data_condition
+ *   (name), source_state, target_state, data_condition
  */
 function serialiseTransition(transition: any, useKeywords: boolean): string {
+  const name      = transition.name          ?? '';
   const source    = transition.sourceState   ?? '';
   const target    = transition.targetState   ?? '';
   const condition = transition.dataCondition ?? '';
 
   if (useKeywords) {
-    return keywordBlock('Transition', [
-      ['source_state',    q(source)],
-      ['target_state',    q(target)],
-      ['data_condition',  q(condition)],
-    ]);
+    const pairs: [string, string][] = [];
+    if (name) pairs.push(['name', q(name)]);
+    pairs.push(['source_state', q(source)], ['target_state', q(target)], ['data_condition', q(condition)]);
+    return keywordBlock('Transition', pairs);
   }
 
-  return positionalBlock('Transition', [q(source), q(target), q(condition)]);
+  return name
+    ? positionalBlock('Transition', [q(name), q(source), q(target), q(condition)])
+    : positionalBlock('Transition', [q(source), q(target), q(condition)]);
 }
 
 /**
