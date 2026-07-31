@@ -522,6 +522,7 @@ export function serialiseTMK(
  * (bare identifiers are valid in several .tmk positions).
  */
 function unquote(raw: string): string {
+  if (raw === undefined || raw === null) return '';
   const t = raw.trim();
   if (t.startsWith('"') && t.endsWith('"')) {
     return t.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
