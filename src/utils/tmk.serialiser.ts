@@ -624,6 +624,18 @@ const POSITIONAL_FIELDS: Record<string, string[]> = {
  */
 function resolveArgs(keyword: string, rawArgs: string[]): Record<string, string> {
   const fields = POSITIONAL_FIELDS[keyword] ?? [];
+
+  // The .tmk format allows Transition to be called with an optional leading
+  // name argument: Transition(name, source, target, condition) - 4 positional args.
+  // Detect this by checking for 4 args with no keyword syntax and promote fields.
+  if (
+    keyword === 'Transition' &&
+    rawArgs.length === 4 &&
+    !rawArgs.some(a => /^[a-zA-Z_][a-zA-Z0-9_]*\s*=/.test(a))
+  ) {
+    fields = ['name', 'source_state', 'target_state', 'data_condition'];
+  }
+  
   const result: Record<string, string> = {};
   let posIdx = 0;
 
