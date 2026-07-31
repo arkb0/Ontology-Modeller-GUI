@@ -110,6 +110,14 @@ const TransitionEntryFields = memo(function TransitionEntryFields({ transition, 
         />
       </Box>
       <DebouncedTextField
+        label="Name (optional)"
+        size="small"
+        fullWidth
+        value={transition.name || ''}
+        onChange={(val: string) => update('name', val)}
+        sx={{ mb: 1, mt: 1 }}
+      />
+      <DebouncedTextField
         label="Source State"
         size="small"
         fullWidth
@@ -166,6 +174,7 @@ const OrganizerFields = memo(function OrganizerFields({ organizer, onChange }: O
 
   const addTransition = useCallback(() => {
     update('transitions', [...(org.transitions || []), {
+      name: '',
       sourceState: '',
       targetState: '',
       dataCondition: ''
