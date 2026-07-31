@@ -625,7 +625,7 @@ const POSITIONAL_FIELDS: Record<string, string[]> = {
  * (keyword args must follow all positional args, matching Python's rule).
  */
 function resolveArgs(keyword: string, rawArgs: string[]): Record<string, string> {
-  const fields = POSITIONAL_FIELDS[keyword] ?? [];
+  let fields = POSITIONAL_FIELDS[keyword] ?? []; // Might be reassigned below...
 
   // The .tmk format allows Transition to be called with an optional leading
   // name argument: Transition(name, source, target, condition) - 4 positional args.
